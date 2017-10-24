@@ -17,11 +17,11 @@ contract BountyTracker is SafeMath {
     // VARIABLES
     //==========================================
 //  Event logs for callback functions
-    event ChangeOwner (address _oldOwner, address _newOwner);
+    event OwnerChanged (address _oldOwner, address _newOwner);
     event ManagerAdded (address _newManager);
     event ManagerDeleted (address _oldManager);
-    event SubmitWork (address _bountyHunter, uint256 _tokenAmount, bytes32 _pullRequestID);
-    event AcceptWork (address _projectManager, address _bountyHunter, uint256 _amount);
+    event BountySubmitted (address _bountyHunter, uint256 _tokenAmount, bytes32 _pullRequestID);
+    event BountyAccepted (address _projectManager, address _bountyHunter, uint256 _amount);
     event BountyFunded (address _funder, uint256 _amount);
     event BountyLocked (address _locker, uint256 _lockBlockTime);
     event BountyUnlocked (address _unlocker, uint256 _unlockBlockTime);
@@ -40,17 +40,20 @@ contract BountyTracker is SafeMath {
     HumanStandardToken token;
 
 //  Bounty Status States
-    enum bountyState {
+    enum lockState {
         Inactive,
         Locked,
         Unlocked
     }
-    bountyState public bountyStatus;
+    lockState public bountyStatus;
 
 //  Pull Request Data Structures
+//  ID Pull Requests with byte32 string (GitHub PR IDs)
+//  Reusing lockState enum for pullRequestStatus
     struct pullRequestStruct {
         address bountyHunter;
         uint256 bountyTokenAmount;
+        lockState pullRequestStatus;
     }
     mapping (bytes32 => pullRequestStruct) public pullRequests;
 
@@ -71,7 +74,7 @@ contract BountyTracker is SafeMath {
 
 //  Only permit function if both bounty lock systems are open
     modifier checkClaimAllowable () {
-        require(bountyStatus == bountyState.Unlocked && unlockBlockNumber > lockBlockNumber);
+        require(bountyStatus == lockState.Unlocked && unlockBlockNumber > lockBlockNumber);
         _;
     }
 
@@ -94,7 +97,7 @@ contract BountyTracker is SafeMath {
         ProjectManagers[msg.sender] = true;
         token = HumanStandardToken(_tokenContract);
         ProjectcontractAddress = _tokenContract;
-        bountyStatus = bountyState.Inactive;
+        bountyStatus = lockState.Inactive;
     }
 
     //==========================================
@@ -106,7 +109,8 @@ contract BountyTracker is SafeMath {
         return ProjectcontractAddress.balance;
     }
 
-//  Check Percentage token share owned by "msg.sender"
+//  Check percentage of token share owned by "msg.sender"
+//  Need further testing to get percentage value
 //  @Input_Dev      Token amount being checked for "shareOf"
 //  @Output_Dev     Return "x"% out of 100% of tokens
     function shareOf (uint256 _tokenAmount) constant returns (uint256 _shareOf) {
@@ -129,16 +133,46 @@ contract BountyTracker is SafeMath {
     //==========================================
     // SETTERS
     //==========================================
+//  Change ProjectCreator address
+//  @Modifier_Dev   onlyProjectCreator: Only allow ProjectCreator to set new ProjectCreator
+//  @Output_Dev     Return "true" when new address is set as ProjectCreator
+    function changeProjectCreator (address _newProjectCreator) onlyProjectCreator returns (bool success) {
+        require(_newProjectCreator != ProjectCreator);
+        ProjectCreator = _newProjectCreator;
+        OwnerChanged(ProjectCreator, _newProjectCreator);
+        return true;
+    }
+
+//  Add new ProjectManager address
+//  @Modifier_Dev   onlyProjectCreator: Only allow ProjectCreator to add new ProjectManager
+//  @Output_Dev     Return "true" when new address is set as ProjectManager
+    function addManager (address _newManager) onlyProjectCreator returns (bool success) {
+        ProjectManagers[_newManager] = true;
+        ManagerAdded(_newManager);
+        return true;
+    }
+
+//  Delete old ProjectManager address
+//  @Modifier_Dev   onlyProjectCreator: Only allow ProjectCreator to delete old ProjectManager
+//  @Output_Dev     Return "true" when new address is set as ProjectManager
+    function delManager (address _oldManager) onlyProjectCreator returns (bool success) {
+        ProjectManagers[_oldManager] = false;
+        ManagerDeleted(_oldManager);
+        return true;
+    }
+
 //  Submit Pull Request with Bounty Amount
 //  @Input_Dev      _tokenAmount: Amount of token bounty requested for Pull Request
 //  @Input_Dev      _pullRequestID: ID tag for Pull Requests
+//  @Output_Dev     Lock Pull requests before work is accepted
 //  @Output_Dev     Return "true" if Pull Request & token bounty are saved
     function submitBounty (uint256 _tokenAmount, bytes32 _pullRequestID) returns (bool success) {
         pullRequests[_pullRequestID] = pullRequestStruct ({
             bountyHunter: msg.sender,
-            bountyTokenAmount: _tokenAmount
+            bountyTokenAmount: _tokenAmount,
+            pullRequestStatus: lockState.Locked
         });
-        SubmitWork(msg.sender, _tokenAmount, _pullRequestID);
+        BountySubmitted(msg.sender, _tokenAmount, _pullRequestID);
         return true;
     }
 
@@ -147,10 +181,10 @@ contract BountyTracker is SafeMath {
 //  @Input_Dev      _bountyHunter: Address of bounty submitter
 //  @Input_Dev      _amount: Token bounty amount for work submitted
 //  @Output_Dev     Return "true" when token bounty is transferred and bountyStatus is locked
-    function acceptWork (address _bountyHunter, uint256 _amount) onlyProjectManagers returns (bool success) {
+    function acceptBounty (address _bountyHunter, uint256 _amount) onlyProjectManagers returns (bool success) {
         require(token.transfer(_bountyHunter, _amount));
-        bountyStatus = bountyState.Locked;
-        AcceptWork(msg.sender, _bountyHunter, _amount);
+        bountyStatus = lockState.Locked;
+        BountyAccepted(msg.sender, _bountyHunter, _amount);
         return true;
     }
 
@@ -170,9 +204,9 @@ contract BountyTracker is SafeMath {
 
 //  Lock bounty with "bountyStatus" and BlockNumber
 //  @Modifier_Dev   onlyProjectManagers: Only allow ProjectManagers to lock project bounty
-//  @Output_Dev     Lock up bountyState and record "lockBlockNumber"
-    function lockBounty () public onlyProjectManagers returns (bool success) {
-        bountyStatus = bountyState.Locked;
+//  @Output_Dev     Lock up lockState and record "lockBlockNumber"
+    function lockProjectBounty () public onlyProjectManagers returns (bool success) {
+        bountyStatus = lockState.Locked;
         lockBlockNumber = block.number;
         BountyLocked(msg.sender, lockBlockNumber);
         return true;
@@ -180,39 +214,12 @@ contract BountyTracker is SafeMath {
 
 //  Unlockock bounty with "bountyStatus" and BlockNumber
 //  @Modifier_Dev   onlyProjectCreator: Only allow ProjectCreator to unlock project bounty
-//  @Output_Dev     Unlock bountyState and record "unlockBlockNumber"
-    function unlockBounty () public onlyProjectCreator returns (bool success) {
-        require(bountyStatus != bountyState.Inactive);
-        bountyStatus = bountyState.Unlocked;
+//  @Output_Dev     Unlock lockState and record "unlockBlockNumber"
+    function unlockProjectBounty () public onlyProjectCreator returns (bool success) {
+        require(bountyStatus != lockState.Inactive);
+        bountyStatus = lockState.Unlocked;
         unlockBlockNumber = block.number;
         BountyUnlocked(msg.sender, unlockBlockNumber);
-        return true;
-    }
-
-//  Change ProjectCreator address
-//  @Modifier_Dev   onlyProjectCreator: Only allow ProjectCreator to set new ProjectCreator
-//  @Output_Dev     Return "true" when new address is set as ProjectCreator
-    function changeProjectCreator (address _newProjectCreator) onlyProjectCreator returns (bool success) {
-        require(_newProjectCreator != ProjectCreator);
-        ProjectCreator = _newProjectCreator;
-        ChangeOwner(ProjectCreator, _newProjectCreator);
-        return true;
-    }
-
-//  Add new ProjectManager address
-//  @Modifier_Dev   onlyProjectCreator: Only allow ProjectCreator to add new ProjectManager
-//  @Output_Dev     Return "true" when new address is set as ProjectManager
-    function addManager (address _newManager) onlyProjectCreator returns (bool success) {
-        ProjectManagers[_newManager] = true;
-        ManagerAdded(_newManager);
-        return true;
-    }
-//  Delete old ProjectManager address
-//  @Modifier_Dev   onlyProjectCreator: Only allow ProjectCreator to delete old ProjectManager
-//  @Output_Dev     Return "true" when new address is set as ProjectManager
-    function delManager (address _oldManager) onlyProjectCreator returns (bool success) {
-        ProjectManagers[_oldManager] = false;
-        ManagerDeleted(_oldManager);
         return true;
     }
 
@@ -223,7 +230,7 @@ contract BountyTracker is SafeMath {
 //  @Output_Dev     Project must have accepted work before "ethers" are allowed be funded
 //  @Output_Dev     Signal Project funder & "ether" amount funded
     function () payable {
-        require(bountyStatus != bountyState.Inactive);
+        require(bountyStatus != lockState.Inactive);
         BountyFunded(msg.sender, msg.value);
     }
 }
