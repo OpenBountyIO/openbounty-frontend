@@ -1,5 +1,7 @@
+//  Set minimum accepted Solidity version
 pragma solidity ^0.4.4;
 
+//  Import dependency files
 import "./SafeMath.sol";
 import "./HumanStandardToken.sol";
 
