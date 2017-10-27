@@ -28,7 +28,7 @@ contract BountyTracker is SafeMath {
     event BountyCLaimed (address _bountyHunter, uint256 _tokenAmount, uint256 _etherAmount);
 
 //  Address management for Project
-    address public ProjectcontractAddress;
+    address public ProjectContractaddress;
     address public ProjectCreator;
     mapping (address => bool) ProjectManagers;
 
@@ -52,7 +52,7 @@ contract BountyTracker is SafeMath {
 //  Reusing lockState enum for pullRequestStatus
     struct pullRequestStruct {
         address bountyHunter;
-        uint256 bountyTokenAmount;
+        uint256 bountyTokenTarget;
         lockState pullRequestStatus;
     }
     mapping (bytes32 => pullRequestStruct) public pullRequests;
@@ -96,7 +96,7 @@ contract BountyTracker is SafeMath {
         ProjectCreator = msg.sender;
         ProjectManagers[msg.sender] = true;
         token = HumanStandardToken(_tokenContract);
-        ProjectcontractAddress = _tokenContract;
+        ProjectContractaddress = _tokenContract;
         bountyStatus = lockState.Inactive;
     }
 
@@ -106,7 +106,7 @@ contract BountyTracker is SafeMath {
 //  Check "ether" balance of Project smart contract address
 //  @Output_Dev     Output value in Wei (1 ETH = 1 000 000 000 000 000 000 Wei)
     function bountyValue () public constant returns (uint currentBounty) {
-        return ProjectcontractAddress.balance;
+        return ProjectContractaddress.balance;
     }
 
 //  Check percentage of token share owned by "msg.sender"
@@ -166,17 +166,18 @@ contract BountyTracker is SafeMath {
 //  @Input_Dev      _pullRequestID: ID tag for Pull Requests
 //  @Output_Dev     Lock Pull requests before work is accepted
 //  @Output_Dev     Return "true" if Pull Request & token bounty are saved
-    function submitBounty (uint256 _tokenAmount, bytes32 _pullRequestID) returns (bool success) {
+    function submitBounty (uint256 _tokenTargetAmount, bytes32 _pullRequestID) returns (bool success) {
         pullRequests[_pullRequestID] = pullRequestStruct ({
             bountyHunter: msg.sender,
-            bountyTokenAmount: _tokenAmount,
+            bountyTokenTarget: _tokenTargetAmount,
             pullRequestStatus: lockState.Locked
         });
-        BountySubmitted(msg.sender, _tokenAmount, _pullRequestID);
+        BountySubmitted(msg.sender, _tokenTargetAmount, _pullRequestID);
         return true;
     }
 
 //  Accept Pull Request with Bounty Amount
+//  Not yet checking "bountyTokenTarget" as of yet
 //  @Modifier_Dev   onlyProjectManagers: Only allow ProjectManagers to accept work
 //  @Input_Dev      _bountyHunter: Address of bounty submitter
 //  @Input_Dev      _amount: Token bounty amount for work submitted
@@ -185,6 +186,14 @@ contract BountyTracker is SafeMath {
         require(token.transfer(_bountyHunter, _amount));
         bountyStatus = lockState.Locked;
         BountyAccepted(msg.sender, _bountyHunter, _amount);
+        return true;
+    }
+
+    function acceptBounty (bytes32 _pullRequestID) onlyProjectManagers {
+        require(token.transfer(pullRequests[_pullRequestID].bountyHunter, _tokenTargetAmount));
+        bountyStatus = lockState.Locked;
+        pullRequests[_pullRequestID].pullRequestStatus = lockState.Locked;
+        BountyAccepted(msg.sender, pullRequests[_pullRequestID].bountyHunter, pullRequests[_pullRequestID].bountyTokenTarget);
         return true;
     }
 
