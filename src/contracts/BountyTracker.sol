@@ -189,6 +189,7 @@ contract BountyTracker is SafeMath {
         return true;
     }
 
+/*
     function acceptBounty (bytes32 _pullRequestID) onlyProjectManagers {
         require(token.transfer(pullRequests[_pullRequestID].bountyHunter, _tokenTargetAmount));
         bountyStatus = lockState.Locked;
@@ -196,6 +197,7 @@ contract BountyTracker is SafeMath {
         BountyAccepted(msg.sender, pullRequests[_pullRequestID].bountyHunter, pullRequests[_pullRequestID].bountyTokenTarget);
         return true;
     }
+*/
 
 //  Claim ethers from Project Bounty
 //  @Modifier_Dev   checkClaimAllowable: check "bountyStatus" and BlockNumber locks
