@@ -24,10 +24,11 @@ contract BountyTracker is SafeMath {
     event ManagerDeleted (address _oldManager);
     event BountySubmitted (address _bountyHunter, uint256 _tokenAmount, bytes32 _pullRequestID);
     event BountyAccepted (address _projectManager, address _bountyHunter, uint256 _amount);
+    event BountyCLaimed (address _bountyHunter, uint256 _tokenAmount, uint256 _etherAmount);
     event BountyFunded (address _funder, uint256 _amount);
     event BountyLocked (address _locker, uint256 _lockBlockTime);
+    event BountyTipped (address _tipper, uint256 _tipAmount);
     event BountyUnlocked (address _unlocker, uint256 _unlockBlockTime);
-    event BountyCLaimed (address _bountyHunter, uint256 _tokenAmount, uint256 _etherAmount);
 
 //  Address management for Project
     address public ProjectContractaddress;
@@ -55,6 +56,7 @@ contract BountyTracker is SafeMath {
     struct pullRequestStruct {
         address bountyHunter;
         uint256 bountyTokenTarget;
+        uint256 pullRequestTip;
         lockState pullRequestStatus;
     }
     mapping (bytes32 => pullRequestStruct) public pullRequests;
@@ -172,12 +174,14 @@ contract BountyTracker is SafeMath {
         pullRequests[_pullRequestID] = pullRequestStruct ({
             bountyHunter: msg.sender,
             bountyTokenTarget: _tokenTargetAmount,
+            pullRequestTip: 0,
             pullRequestStatus: lockState.Locked
         });
         BountySubmitted(msg.sender, _tokenTargetAmount, _pullRequestID);
         return true;
     }
 
+/*  *****DEPRECIATED*****
 //  Accept Pull Request with Bounty Amount
 //  Not yet checking "bountyTokenTarget" as of yet
 //  @Modifier_Dev   onlyProjectManagers: Only allow ProjectManagers to accept work
@@ -190,16 +194,30 @@ contract BountyTracker is SafeMath {
         BountyAccepted(msg.sender, _bountyHunter, _amount);
         return true;
     }
+*/
 
-/*
-    function acceptBounty (bytes32 _pullRequestID) onlyProjectManagers {
+//  Accept Pull Request with Bounty Amount
+//  @Modifier_Dev   onlyProjectManagers: Only allow ProjectManagers to accept work
+//  @Input_Dev      _pullRequestID: ID tag for Pull Requests
+//  @Output_Dev     Return "true" when token bounty is transferred and bountyStatus is locked
+    function acceptBounty (bytes32 _pullRequestID) onlyProjectManagers returns (bool success) {
         require(token.transfer(pullRequests[_pullRequestID].bountyHunter, _tokenTargetAmount));
         bountyStatus = lockState.Locked;
         pullRequests[_pullRequestID].pullRequestStatus = lockState.Locked;
         BountyAccepted(msg.sender, pullRequests[_pullRequestID].bountyHunter, pullRequests[_pullRequestID].bountyTokenTarget);
         return true;
     }
-*/
+
+//  Tip Pull Request with bonus bounty tokens
+//  @Input_Dev      _pullRequestID: ID tag for Pull Requests
+//  @Input_Dev      _tipAmount: bounty token amount to tip
+//  @Output_Dev     Return "true" when bounty token is transferred
+    function tipBounty (bytes32 _pullRequestID, uint256 _tipAmount) returns (bool success) {
+        require(token.transfer(msg.sender, _tipAmount));
+        pullRequests[_pullRequestID].pullRequestTip += _tipAmount;
+        BountyTipped(msg.sender, _tipAmount);
+        return true;
+    }
 
 //  Claim ethers from Project Bounty
 //  @Modifier_Dev   checkClaimAllowable: check "bountyStatus" and BlockNumber locks
